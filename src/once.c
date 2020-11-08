@@ -43,7 +43,9 @@ static void
 _dispatch_once_callout(dispatch_once_gate_t l, void *ctxt,
 		dispatch_function_t func)
 {
+	// 调用block中的func
 	_dispatch_client_callout(ctxt, func);
+	// 广播唤醒所有等待的线程
 	_dispatch_once_gate_broadcast(l);
 }
 
@@ -54,18 +56,23 @@ dispatch_once_f(dispatch_once_t *val, void *ctxt, dispatch_function_t func)
 	dispatch_once_gate_t l = (dispatch_once_gate_t)val;
 
 #if !DISPATCH_ONCE_INLINE_FASTPATH || DISPATCH_ONCE_USE_QUIESCENT_COUNTER
+	// 原子性获取l->dgo_once的值
 	uintptr_t v = os_atomic_load(&l->dgo_once, acquire);
+	// 判定上面的值是否为DLOCK_ONCE_DONE(大概率是，表明已经被赋值执行func)，是则直接返回
 	if (likely(v == DLOCK_ONCE_DONE)) {
 		return;
 	}
 #if DISPATCH_ONCE_USE_QUIESCENT_COUNTER
+	// 不同的判定形式
 	if (likely(DISPATCH_ONCE_IS_GEN(v))) {
 		return _dispatch_once_mark_done_if_quiesced(l, v);
 	}
 #endif
 #endif
+	// 原子性判断是否已赋值
 	if (_dispatch_once_gate_tryenter(l)) {
 		return _dispatch_once_callout(l, ctxt, func);
 	}
+	// 线程阻塞等待dispatch_function_t func执行完成
 	return _dispatch_once_wait(l);
 }
